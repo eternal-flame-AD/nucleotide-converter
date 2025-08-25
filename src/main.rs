@@ -12,9 +12,9 @@ fn main() {
     let code = std::env::args()
         .nth(1)
         .unwrap_or("ATCGatcgATCGatcgNn".to_string());
-    let converter = nucleotide_converter::NaiveCodeConverter;
+    let converter = nucleotide_converter::NaiveCodeConverter::default();
     demo_converter(&code, &converter);
-    let converter = nucleotide_converter::LUTCodeConverter;
+    let converter = nucleotide_converter::LUTCodeConverter::default();
     demo_converter(&code, &converter);
     let converter = nucleotide_converter::SSE2CodeConverter::default();
     demo_converter(&code, &converter);

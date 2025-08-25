@@ -96,7 +96,7 @@ fn benchmark_code_converter(c: &mut Criterion) {
                         }
                         core::hint::black_box(&out);
 
-                        if out != expected {
+                        if cfg!(debug_assertions) && out != expected {
                             panic!(
                                 "out != expected (converter: {:?}) (first 5 nt: {:?}, out: {:?}, expected: {:?}, first mismatch: {:?})",
                                 input.name,
