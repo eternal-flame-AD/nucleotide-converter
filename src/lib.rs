@@ -10,16 +10,12 @@ pub struct NaiveCodeConverter;
 impl CodeConverter for NaiveCodeConverter {
     fn convert(&self, code: &[u8], out: &mut [u8]) {
         for (a, b) in code.iter().zip(out.iter_mut()) {
-            let mut c = *a;
-            if c >= b'a' && c <= b'z' {
-                c -= b'a' - b'A';
-            }
-            match c {
-                b'A' => *b = 0,
-                b'T' => *b = 1,
-                b'C' => *b = 2,
-                b'G' => *b = 3,
-                _ => *b = !0,
+            *b = match *a & (!0x20) {
+                b'A' => 0,
+                b'T' => 1,
+                b'C' => 2,
+                b'G' => 3,
+                _ => !0,
             }
         }
     }
