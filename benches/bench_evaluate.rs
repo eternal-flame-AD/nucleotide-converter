@@ -2,21 +2,20 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nucleotide_converter::CodeConverter;
 use rand::{Rng, SeedableRng};
 
-fn generate_code(n: usize) -> Vec<u8> {
-    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
-    let mut code = Vec::new();
-    for _ in 0..n {
-        code.push(b"ATCGatcg"[rng.random_range(0..8)]);
+fn generate_code(rng: &mut impl Rng, out: &mut [u8]) {
+    for i in 0..out.len() {
+        out[i] = b"ATCGatcgNn"[rng.random_range(0..10)];
     }
-    code
 }
 
 #[derive(Debug, Clone, Copy)]
 enum Converter {
     Naive,
+    NaiveToLower,
     LUT,
     SSE2,
     AVX2,
+    AVX512VBMI,
 }
 
 struct Input {
@@ -33,50 +32,90 @@ impl std::fmt::Display for Input {
 fn benchmark_code_converter(c: &mut Criterion) {
     let mut g = c.benchmark_group("code_converter");
 
-    for converter in [
-        Converter::Naive,
-        Converter::LUT,
-        Converter::SSE2,
-        Converter::AVX2,
-    ] {
-        let input = Input {
-            name: converter,
-            n: 3_000_000,
-        };
-        g.throughput(Throughput::Elements(input.n as u64));
-        g.bench_with_input(
-            BenchmarkId::new("code_converter", &input),
-            &input,
-            |b, input: &Input| {
-                let code = generate_code(input.n);
-                let mut out = vec![0; code.len()];
-                let mut expected = vec![0; code.len()];
-                nucleotide_converter::NaiveCodeConverter::default().convert(&code, &mut expected);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
+    for n in [3_000_000, 100_000_000] {
+        for converter in [
+            Converter::NaiveToLower,
+            Converter::Naive,
+            Converter::LUT,
+            Converter::SSE2,
+        ]
+        .into_iter()
+        .chain(
+            core::iter::once(Converter::AVX2)
+                .filter(|_| std::arch::is_x86_feature_detected!("avx2")),
+        )
+        .chain(
+            core::iter::once(Converter::AVX512VBMI)
+                .filter(|_| std::arch::is_x86_feature_detected!("avx512vbmi")),
+        ) {
+            let input = Input {
+                name: converter,
+                n: n,
+            };
+            g.throughput(Throughput::Elements(input.n as u64));
+            let mut code = vec![0; input.n];
+            g.bench_with_input(
+                BenchmarkId::new("code_converter", &input),
+                &input,
+                |b, input: &Input| {
+                    generate_code(&mut rng, &mut code);
+                    let mut out = vec![0; code.len()];
+                    let mut expected = vec![0; code.len()];
+                    nucleotide_converter::NaiveCodeConverter::default()
+                        .convert(&code, &mut expected);
 
-                b.iter(|| {
-                    match input.name {
-                        Converter::SSE2 => {
-                            let converter = nucleotide_converter::SSE2CodeConverter::default();
-                            converter.convert(&code, &mut out);
+                    b.iter(|| {
+                        match input.name {
+                            Converter::SSE2 => {
+                                let converter = nucleotide_converter::SSE2CodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::NaiveToLower => {
+                                let converter =
+                                    nucleotide_converter::NaiveToLowerCodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::LUT => {
+                                let converter = nucleotide_converter::LUTCodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::Naive => {
+                                let converter = nucleotide_converter::NaiveCodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::AVX2 => {
+                                let converter = nucleotide_converter::AVX2CodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::AVX512VBMI => {
+                                let converter =
+                                    nucleotide_converter::AVX512VbmiCodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
                         }
-                        Converter::LUT => {
-                            let converter = nucleotide_converter::LUTCodeConverter::default();
-                            converter.convert(&code, &mut out);
+                        core::hint::black_box(&out);
+
+                        if out != expected {
+                            panic!(
+                                "out != expected (converter: {:?}) (first 5 nt: {:?}, out: {:?}, expected: {:?}, first mismatch: {:?})",
+                                input.name,
+                                &code[..5],
+                                &out[..5],
+                                &expected[..5],
+                                out.iter().zip(expected.iter()).enumerate().find_map(|(i, (a, b))| {
+                                    if a != b {
+                                        Some(i)
+                                    } else {
+                                        None
+                                    }
+                                }),
+                            );
                         }
-                        Converter::Naive => {
-                            let converter = nucleotide_converter::NaiveCodeConverter::default();
-                            converter.convert(&code, &mut out);
-                        }
-                        Converter::AVX2 => {
-                            let converter = nucleotide_converter::AVX2CodeConverter::default();
-                            converter.convert(&code, &mut out);
-                        }
-                    }
-                    core::hint::black_box(&out);
-                    debug_assert_eq!(out, expected);
-                });
-            },
-        );
+                    });
+                },
+            );
+        }
     }
 }
 
