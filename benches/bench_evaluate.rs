@@ -14,6 +14,7 @@ enum Converter {
     NaiveToLower,
     LUT,
     SSE2,
+    SSSE3,
     AVX2,
     AVX512VBMI,
 }
@@ -42,6 +43,10 @@ fn benchmark_code_converter(c: &mut Criterion) {
         ]
         .into_iter()
         .chain(
+            core::iter::once(Converter::SSSE3)
+                .filter(|_| std::arch::is_x86_feature_detected!("ssse3")),
+        )
+        .chain(
             core::iter::once(Converter::AVX2)
                 .filter(|_| std::arch::is_x86_feature_detected!("avx2")),
         )
@@ -69,6 +74,10 @@ fn benchmark_code_converter(c: &mut Criterion) {
                         match input.name {
                             Converter::SSE2 => {
                                 let converter = nucleotide_converter::SSE2CodeConverter::default();
+                                converter.convert(&code, &mut out);
+                            }
+                            Converter::SSSE3 => {
+                                let converter = nucleotide_converter::SSSE3CodeConverter::default();
                                 converter.convert(&code, &mut out);
                             }
                             Converter::NaiveToLower => {

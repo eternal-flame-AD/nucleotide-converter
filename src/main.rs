@@ -18,6 +18,8 @@ fn main() {
     demo_converter(&code, &converter);
     let converter = nucleotide_converter::SSE2CodeConverter::default();
     demo_converter(&code, &converter);
+    let converter = nucleotide_converter::SSSE3CodeConverter::default();
+    demo_converter(&code, &converter);
     let converter = nucleotide_converter::AVX2CodeConverter::default();
     demo_converter(&code, &converter);
     let converter = nucleotide_converter::AVX512VbmiCodeConverter::default();
