@@ -1,0 +1,19 @@
+[package]
+name = "nucleotide_converter"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[profile.release]
+lto = true
+opt-level = 3
+panic = "abort"
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+rand = { version = "0.9", default-features = false, features = ["small_rng"] }
+
+[[bench]]
+name = "bench_evaluate"
+harness = false
