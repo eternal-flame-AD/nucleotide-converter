@@ -6,6 +6,8 @@ pub trait CodeConverter {
     fn convert(&self, code: &[u8], out: &mut [u8]);
 }
 
+#[cold]
+fn unlikely() {}
 #[derive(Default)]
 pub struct NaiveCodeConverter {
     _private: (),
@@ -121,22 +123,15 @@ macro_rules! mm_blendv_epi8x {
 }
 
 impl CodeConverter for SSE2CodeConverter {
-    fn convert(&self, mut code: &[u8], mut out: &mut [u8]) {
+    fn convert(&self, code: &[u8], out: &mut [u8]) {
         assert!(out.len() >= code.len());
-
-        let align_offset = code.as_ptr().align_offset(16).min(code.len());
-
-        self.scalar
-            .convert(&code[..align_offset], &mut out[..align_offset]);
-        code = &code[align_offset..];
-        out = &mut out[align_offset..];
 
         let mut chunks = code.chunks_exact(16);
         let mut out_chunks = out.chunks_exact_mut(16);
         unsafe {
             for (chunk_in, chunk_out) in (&mut chunks).zip(&mut out_chunks) {
                 let chunk_xmm =
-                    _mm_or_si128(self.tolower, _mm_load_si128(chunk_in.as_ptr().cast()));
+                    _mm_or_si128(self.tolower, _mm_loadu_si128(chunk_in.as_ptr().cast()));
 
                 let is_a = _mm_cmpeq_epi8(chunk_xmm, self.a);
                 let is_t = _mm_cmpeq_epi8(chunk_xmm, self.t);
@@ -170,6 +165,7 @@ impl CodeConverter for SSSE3CodeConverter {
         if x86_ssse3::get() {
             unsafe { self.convert_impl(code, out) }
         } else {
+            unlikely();
             let sse = SSE2CodeConverter::default();
             sse.convert(code, out);
         }
@@ -178,15 +174,8 @@ impl CodeConverter for SSSE3CodeConverter {
 
 impl SSSE3CodeConverter {
     #[target_feature(enable = "ssse3")]
-    fn convert_impl(&self, mut code: &[u8], mut out: &mut [u8]) {
+    fn convert_impl(&self, code: &[u8], out: &mut [u8]) {
         assert!(out.len() >= code.len());
-
-        let align_offset = code.as_ptr().align_offset(16).min(code.len());
-
-        self.scalar
-            .convert(&code[..align_offset], &mut out[..align_offset]);
-        code = &code[align_offset..];
-        out = &mut out[align_offset..];
 
         let mut chunks = code.chunks_exact(16);
         let mut out_chunks = out.chunks_exact_mut(16);
@@ -215,7 +204,7 @@ impl SSSE3CodeConverter {
 
             for (chunk_in, chunk_out) in (&mut chunks).zip(&mut out_chunks) {
                 let chunk_xmm = _mm_subs_epi8(
-                    _mm_load_si128(chunk_in.as_ptr().cast()),
+                    _mm_loadu_si128(chunk_in.as_ptr().cast()),
                     _mm_set1_epi8(0b100_0000), // check the 6-th bit, if it is zero this will set the sign bit
                 );
 
@@ -258,7 +247,7 @@ impl CodeConverter for AVX2CodeConverter {
 
 impl AVX2CodeConverter {
     #[target_feature(enable = "avx2")]
-    fn convert_impl(&self, mut code: &[u8], mut out: &mut [u8]) {
+    fn convert_impl(&self, code: &[u8], out: &mut [u8]) {
         assert!(out.len() >= code.len());
 
         let (a, t, c, g, one, two, three, tolower, nil) = (
@@ -273,19 +262,13 @@ impl AVX2CodeConverter {
             _mm256_set1_epi8(!0 as _),
         );
 
-        let align_offset = code.as_ptr().align_offset(32).min(code.len());
-
-        NaiveCodeConverter::default().convert(&code[..align_offset], &mut out[..align_offset]);
-        code = &code[align_offset..];
-        out = &mut out[align_offset..];
-
         let mut chunks = code.chunks_exact(32);
         let mut out_chunks = out.chunks_exact_mut(32);
 
         unsafe {
             for (chunk_in, chunk_out) in (&mut chunks).zip(&mut out_chunks) {
                 let chunk_ymm =
-                    _mm256_or_si256(tolower, _mm256_load_si256(chunk_in.as_ptr().cast()));
+                    _mm256_or_si256(tolower, _mm256_loadu_si256(chunk_in.as_ptr().cast()));
                 let is_a = _mm256_cmpeq_epi8(chunk_ymm, a);
                 let is_t = _mm256_cmpeq_epi8(chunk_ymm, t);
                 let is_c = _mm256_cmpeq_epi8(chunk_ymm, c);
@@ -322,7 +305,7 @@ impl CodeConverter for AVX512VbmiCodeConverter {
 
 impl AVX512VbmiCodeConverter {
     #[target_feature(enable = "avx512vbmi")]
-    fn convert_impl(&self, mut code: &[u8], mut out: &mut [u8]) {
+    fn convert_impl(&self, code: &[u8], out: &mut [u8]) {
         assert!(out.len() >= code.len());
 
         static LUT: Align64<[u8; 64]> = Align64(
@@ -340,12 +323,6 @@ impl AVX512VbmiCodeConverter {
                 lut
             },
         );
-
-        let align_offset = code.as_ptr().align_offset(64).min(code.len());
-
-        NaiveCodeConverter::default().convert(&code[..align_offset], &mut out[..align_offset]);
-        code = &code[align_offset..];
-        out = &mut out[align_offset..];
 
         let mut chunks = code.chunks_exact(64);
         let mut out_chunks = out.chunks_exact_mut(64);
