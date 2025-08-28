@@ -1,9 +1,16 @@
-#![no_std]
+//#![no_std]
 #![warn(clippy::all)]
 use core::arch::x86_64::*;
+use std::ops::Deref;
+
+pub mod custom_alphabet;
 
 pub trait CodeConverter {
     fn convert(&self, code: &[u8], out: &mut [u8]);
+}
+
+pub trait CodeConverterInPlace {
+    fn convert_in_place<'a>(&self, code: &'a mut [u8]) -> &'a mut [u8];
 }
 
 #[cold]
@@ -53,6 +60,19 @@ pub struct LUTCodeConverter {
 
 #[repr(align(64))]
 struct Align64<T>(T);
+
+impl<T> Deref for Align64<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> core::ops::DerefMut for Align64<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl CodeConverter for LUTCodeConverter {
     fn convert(&self, code: &[u8], out: &mut [u8]) {
