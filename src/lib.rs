@@ -1,6 +1,12 @@
 //#![no_std]
 #![warn(clippy::all)]
+
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+
+#[cfg(target_arch = "x86")]
+use core::arch::x86::*;
+
 use std::ops::Deref;
 
 pub mod custom_alphabet;
